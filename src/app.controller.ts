@@ -1,10 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { AppService } from './services/app.service';
-import { InternalAuthGuard } from './common/guards/internal-auth-guard';
 import { SetTimeDto } from './dto/setTime.dto';
+import { InternalSecurityGuard } from './common/guards/internal-security.guard';
+import { InternalSecurityInterceptor } from './common/interceptors/internal-security.interceptor';
 
 @Controller()
-//@UseGuards(InternalAuthGuard)
+@UseGuards(InternalSecurityGuard)
+@UseInterceptors(InternalSecurityInterceptor)
 export class AppController {
   constructor(private readonly appService: AppService) { }
 
@@ -24,13 +26,13 @@ export class AppController {
   @Post('cast')
   async castVote(@Body() data: { userId: string; candidateId: string, electionId: string }) {
     //Guardamos la opción elegida y ponemos el estado en "PENDING_CONFIRMATION"
-    return await this.appService.processCast(data.userId, data.candidateId, data.electionId);
+    return await this.appService.processCast(data);
   }
 
   // Peticion desde el API Gateway para confirmar un voto
   @Post('confirm')
   async confirmVote(@Body() data: { userId: string, electionId: string }) {
-    return await this.appService.finalizeVote(data.userId, data.electionId);
+    return await this.appService.finalizeVote(data);
   }
 
   // Peticion desde el Wallet Service que avisa que ya se subio a la blockchain
