@@ -22,7 +22,7 @@ import { InternalSecurityService } from './common/security/internal-security.ser
     RedisModule.forRootAsync({
       useFactory: (configService: ConfigService) => ({
         type: 'single',
-        url: configService.get<string>('REDIS_URL_LOCAL') || 'redis://localhost:6379',
+        url: configService.get<string>('REDIS_URL') || 'redis://localhost:6379',
       }),
       inject: [ConfigService],
     }),
