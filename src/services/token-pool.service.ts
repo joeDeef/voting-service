@@ -40,9 +40,8 @@ export class TokenPoolService implements OnModuleInit {
 
     // 2. Consultar tokens disponibles en Supabase
     const { data, error } = await this.supabase
-      .from('voter_tokens_pool')
-      .select('token_value')
-      .eq('is_used', false); // Solo cargamos los que no se han "quemado"
+      .from('Tokens')
+      .select('token')
 
     if (error) {
       this.logger.error('Error al obtener tokens de Supabase:', error.message);
@@ -50,16 +49,16 @@ export class TokenPoolService implements OnModuleInit {
     }
 
     if (data && data.length > 0) {
-      const tokens = data.map((t) => t.token_value);
-
+      const tokens = data.map((t) => t.token);
+      
       // 3. Cargar en Redis usando SADD (Operación atómica)
-      // Usamos el operador spread (...) para mandar el array de tokens
       await this.redis.sadd('voter_pool', ...tokens);
 
       this.logger.log(`Éxito: ${tokens.length} tokens cargados en Redis.`);
     } else {
       this.logger.warn('No hay tokens disponibles en Supabase para cargar.');
     }
+
   }
 
   // Método que usarán tus otros controladores (VotingController)

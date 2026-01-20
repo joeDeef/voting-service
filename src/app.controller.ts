@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { AppService } from './services/app.service';
 import { InternalAuthGuard } from './common/guards/internal-auth-guard';
+import { SetTimeDto } from './dto/setTime.dto';
 
-@Controller('voting')
-@UseGuards(InternalAuthGuard)
+@Controller()
+//@UseGuards(InternalAuthGuard)
 export class AppController {
-  constructor(private readonly appService: AppService) {}
+  constructor(private readonly appService: AppService) { }
 
   @Get('test')
   getHello(): string {
@@ -14,20 +15,22 @@ export class AppController {
 
   // Peticion desde el API Gateway para establecer el tiempo de votacion
   @Post('setTime')
-  setTiem(@Body() timeVote: any): string {
-    return this.appService.setTimeot();
+  async setTime(@Body() data: SetTimeDto) {
+    // Iniciamos la sesión de votación en caché
+    return await this.appService.initializeSession(data);
   }
 
   // Peticion desde el API Gateway para emitir un voto
   @Post('cast')
-  castVote(@Body() voteData: any): string {
-    return this.appService.castVote();
+  async castVote(@Body() data: { userId: string; candidateId: string, electionId: string }) {
+    //Guardamos la opción elegida y ponemos el estado en "PENDING_CONFIRMATION"
+    return await this.appService.processCast(data.userId, data.candidateId, data.electionId);
   }
 
   // Peticion desde el API Gateway para confirmar un voto
   @Post('confirm')
-  confirmVote(@Body() confirmData: any): string {
-    return this.appService.confirmVote();
+  async confirmVote(@Body() data: { userId: string, electionId: string }) {
+    return await this.appService.finalizeVote(data.userId, data.electionId);
   }
 
   // Peticion desde el Wallet Service que avisa que ya se subio a la blockchain
