@@ -9,6 +9,7 @@ export abstract class BaseProxy {
   protected abstract readonly logger: Logger;
   protected abstract readonly serviceName: string;
   protected abstract readonly privateKeyVar: string;
+  protected abstract readonly apiKeyVar: string;
   protected abstract readonly urlVar: string;
 
   constructor(
@@ -28,6 +29,7 @@ export abstract class BaseProxy {
     const { headers, payload: securePayload } = await this.securityService.getSecurityHeaders(
       this.serviceName,
       this.privateKeyVar,
+      this.apiKeyVar,
       data
     );
 
@@ -50,6 +52,7 @@ export abstract class BaseProxy {
     const { headers } = await this.securityService.getSecurityHeaders(
       this.serviceName,
       this.privateKeyVar,
+      this.apiKeyVar,
       {}
     );
     const fullUrl = `${this.baseUrl}${endpoint}`;

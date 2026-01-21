@@ -17,6 +17,10 @@ export class CensusProxy extends BaseMessageProxy {
     super(censusClient, securityService);
   }
 
+  async iniciarVoto(cedula: string) {
+    return this.sendPlainRequest('census.start-voting', { cedula });
+  }
+
   async saveVote(cedula: string) {
     return this.sendPlainRequest('census.save-vote', { cedula });
   }

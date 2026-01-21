@@ -1,7 +1,7 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import * as crypto from 'crypto';
+import { Injectable, InternalServerErrorException } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
+import { JwtService } from "@nestjs/jwt";
+import * as crypto from "crypto";
 
 @Injectable()
 export class InternalSecurityService {
@@ -11,49 +11,54 @@ export class InternalSecurityService {
   ) {}
 
   async getSecurityHeaders(
-    targetService: string, 
-    signingKeyEnv: string, 
-    body: any, 
-    encryptionKeyEnv?: string // Parámetro opcional para cifrado
+    targetService: string,
+    signingKeyEnv: string,
+    apiKeyEnv: string,
+    body: any,
+    encryptionKeyEnv?: string
   ) {
     const signingKeyBase64 = this.configService.get<string>(signingKeyEnv);
+    const internalApiKey = this.configService.get<string>(apiKeyEnv);
+
     if (!signingKeyBase64) throw new InternalServerErrorException(`Llave de firma ${signingKeyEnv} no encontrada.`);
+    if (!internalApiKey) throw new InternalServerErrorException(`API Key ${apiKeyEnv} no encontrada.`);
 
     try {
       const privateKey = Buffer.from(signingKeyBase64, 'base64').toString('utf-8');
-      let finalBody = JSON.stringify(body || {}).replace(/\s+/g, '');
+      const originalBodyString = JSON.stringify(body || {});
+      let finalPayload = body;
       let isEncrypted = false;
 
-      // --- PASO 1: CIFRADO (Opcional) ---
+      // 1. FIRMA (Sobre contenido plano)
+      const signature = crypto.sign(
+        "sha256",
+        Buffer.from(originalBodyString),
+        {
+          key: privateKey,
+          padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+          saltLength: crypto.constants.RSA_PSS_SALTLEN_DIGEST,
+        }
+      ).toString('base64');
+
+      // 2. CIFRADO (Opcional)
       if (encryptionKeyEnv) {
         const pubKeyBase64 = this.configService.get<string>(encryptionKeyEnv);
         if (pubKeyBase64) {
           const publicKey = Buffer.from(pubKeyBase64, 'base64').toString('utf-8');
-          
-          // Ciframos el body con la llave pública del destino
-          const buffer = Buffer.from(finalBody);
           const encrypted = crypto.publicEncrypt(
             {
               key: publicKey,
               padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
               oaepHash: "sha256",
             },
-            buffer
+            Buffer.from(originalBodyString)
           );
-          finalBody = encrypted.toString('base64');
+          finalPayload = { data: encrypted.toString('base64') };
           isEncrypted = true;
         }
       }
 
-      // --- PASO 2: FIRMA (Siempre se ejecuta) ---
-      // Firmamos el 'finalBody' (ya sea texto plano o cifrado)
-      const hash = crypto.createHash('sha256').update(finalBody).digest('hex');
-      const signature = crypto.sign("sha256", Buffer.from(hash), {
-        key: privateKey,
-        padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
-      }).toString('base64');
-
-      // --- PASO 3: JWT de Identidad ---
+      // 3. JWT de Identidad
       const token = await this.jwtService.signAsync(
         { iss: 'sevotec-gateway', aud: targetService },
         { privateKey: privateKey, algorithm: 'RS256', expiresIn: '20s' }
@@ -62,11 +67,12 @@ export class InternalSecurityService {
       return {
         headers: {
           'x-internal-token': token,
+          'x-api-key': internalApiKey,
           'x-signature': signature,
-          'x-encrypted': isEncrypted ? 'true' : 'false',
+          'x-encrypted': String(isEncrypted),
           'Content-Type': 'application/json',
         },
-        payload: isEncrypted ? { data: finalBody } : body // Si cifró, envía el base64, si no, el body original
+        payload: finalPayload
       };
     } catch (error) {
       throw new InternalServerErrorException(`Fallo en seguridad: ${error.message}`);

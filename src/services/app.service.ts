@@ -3,7 +3,7 @@ import Redis from 'ioredis';
 import { SetTimeDto } from 'src/dto/setTime.dto';
 import { TokenPoolService } from './token-pool.service';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { BlockchainProxy } from 'src/common/proxies/wallet.proxy';
+import { BlockchainProxy } from 'src/common/proxies/blockchain.proxy';
 import { CensusProxy } from 'src/common/proxies/census.proxy';
 
 @Injectable()
@@ -89,10 +89,10 @@ export class AppService {
       // 3. ENVIAR A BLOCKCHAIN SERVICE vía Proxy
       // El proxy se encarga de firmar la petición con la llave del Voting Service
       await this.blockchainProxy.registerVoteOnBlockchain({
-        electionId: data.electionId,
-        candidateId: session.candidateId,
-        timestamp: Date.now().toString(),
-        voterToken: session.voterToken,
+        idEleccion: data.electionId,
+        idCandidato: session.candidateId,
+        fechaHora: Date.now(),
+        tokenVotante: session.voterToken,
       });
 
       // 1. Guardamos el mapeo persistente: voterToken -> userId
@@ -139,6 +139,8 @@ export class AppService {
 
   async initializeSession(data: SetTimeDto) {
     try {
+      await this.censusProxy.iniciarVoto(data.userId);
+
       // 1. Extraer el token anónimo
       const anonymousToken = await this.tokenPool.popToken();
 

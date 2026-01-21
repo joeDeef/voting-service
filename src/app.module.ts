@@ -8,7 +8,7 @@ import { AppController } from './app.controller';
 import { AppService } from './services/app.service';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { TokenPoolService } from './services/token-pool.service';
-import { BlockchainProxy } from './common/proxies/wallet.proxy';
+import { BlockchainProxy } from './common/proxies/blockchain.proxy';
 import { InternalSecurityService } from './common/security/internal-security.service';
 import { InternalSecurityGuard } from './common/guards/internal-security.guard';
 import { CensusProxy } from './common/proxies/census.proxy';
