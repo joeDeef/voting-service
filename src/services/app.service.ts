@@ -1,10 +1,9 @@
-import { BadRequestException, ForbiddenException, Injectable, InternalServerErrorException, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger, UnauthorizedException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { SetTimeDto } from 'src/dto/setTime.dto';
 import { TokenPoolService } from './token-pool.service';
 import { InjectRedis } from '@nestjs-modules/ioredis';
 import { BlockchainProxy } from 'src/common/proxies/wallet.proxy';
-import { timestamp } from 'rxjs';
 import { CensusProxy } from 'src/common/proxies/census.proxy';
 
 @Injectable()
@@ -41,6 +40,7 @@ export class AppService {
 
     // 3. Actualizar estado a "Pendiente de Confirmación"
     session.candidateId = data.candidateId;
+    session.electionId = data.electionId;
     session.status = 'PENDING_CONFIRMATION';
 
     // 4. Guardar en Redis manteniendo el tiempo restante exacto
@@ -57,10 +57,9 @@ export class AppService {
     };
   }
 
-  async finalizeVote(data: { userId: string, electionId: string }) {
+  async finalizeVote(data: { userId: string; candidateId: string, electionId: string }) {
     const sessionKey = `session:${data.userId}`;
     const sessionRaw = await this.redis.get(sessionKey);
-    const blacklistKey = `voted:${data.userId}`;
 
     // 1. Validar existencia de la sesión en caché
     if (!sessionRaw) {
@@ -68,6 +67,18 @@ export class AppService {
     }
 
     const session = JSON.parse(sessionRaw);
+
+    const isElectionValid = session.electionId === data.electionId;
+    const isCandidateValid = session.candidateId === data.candidateId;
+    
+    if (!isElectionValid || !isCandidateValid) {
+      this.logger.error(`ALERTA DE SEGURIDAD: Intento de alteración de voto para el usuario ${data.userId}`);
+
+      // Si detectamos manipulación, borramos la sesión por seguridad inmediatamente
+      await this.redis.del(sessionKey);
+
+      throw new BadRequestException('Los datos de confirmación no coinciden con la selección original.');
+    }
 
     // 2. Validar que el flujo de estados sea correcto (Máquina de Estados)
     if (session.status !== 'PENDING_CONFIRMATION') {
@@ -84,15 +95,17 @@ export class AppService {
         voterToken: session.voterToken,
       });
 
-      // 3. Marcar el userID en la lista negra de la API GATEWAY para que no pueda votar de nuevo
-      await this.redis.set(blacklistKey, 'true', 'EX', 86400);
+      // 1. Guardamos el mapeo persistente: voterToken -> userId
+      // Esta llave NO tiene que ver con la sesión, es para el callback asíncrono
+      const trackingKey = `tracking:vote:${session.voterToken}`;
+      await this.redis.set(trackingKey, data.userId, 'EX', 86400);
 
-      // TODO: Avisar al Census Service que actualice el estado a GUARDANDO_VOTO
       await this.censusProxy.saveVote(data.userId);
 
-      // 5. Limpiar Redis tras el éxito del envío
-      // Esto asegura que el mismo usuario no pueda re-confirmar el mismo voto
+      // 3. Marcar el userID en la lista negra de la API GATEWAY para que no pueda votar de nuevo (Lo borramos de cache)
       await this.redis.del(sessionKey);
+
+      this.logger.log(`Voto registrado y sesión eliminada para: ${data.userId}`);
 
       return {
         success: true,
@@ -100,48 +113,61 @@ export class AppService {
       };
 
     } catch (error) {
-      // Es vital manejar errores de red o del servicio externo para auditoría
       throw new InternalServerErrorException('Fallo crítico al registrar el voto en la red blockchain.');
     }
   }
 
-  confirmUpBlockchain(): string {
-    // Logic to update the blockchain
-    return 'Blockchain updated successfully!';
+  async confirmUpBlockchain(payload: { voterToken: string }) {
+    const trackingKey = `tracking:vote:${payload.voterToken}`;
+
+    // Recuperamos el userId del "puente" de Redis
+    const userId = await this.redis.get(trackingKey);
+
+    if (!userId) {
+      this.logger.error(`Error crítico: No hay rastro del usuario para el token ${payload.voterToken}`);
+      return;
+    }
+
+    // Ahora sí, cerramos el ciclo en el Censo
+    await this.censusProxy.confirmVoto(userId);
+
+    // Limpiamos el puente
+    await this.redis.del(trackingKey);
+
+    this.logger.log(`Estado actualizado a VOTO_CONFIRMADO para el usuario ${userId}`);
   }
 
   async initializeSession(data: SetTimeDto) {
     try {
-      // 1. Extraer el token anónimo del pool de Redis
+      // 1. Extraer el token anónimo
       const anonymousToken = await this.tokenPool.popToken();
 
-      // 2. Calcular el Tiempo de Vida (TTL) para Redis
+      // 2. Validar que la fecha no sea pasada (esto sigue siendo necesario)
       const nowUnix = Math.floor(Date.now() / 1000);
-      const ttlSeconds = data.expirationTime - nowUnix;
-
-      if (ttlSeconds <= 0) {
+      if (data.expirationTime <= nowUnix) {
         throw new Error('El tiempo de expiración ya ha pasado');
       }
 
-      // 3. Estructura del registro para la caché
+      // 3. Estructura del registro
       const sessionRecord = {
         userId: data.userId,
-        voterToken: anonymousToken, // Token extraído del pool
+        voterToken: anonymousToken,
         expirationTime: data.expirationTime,
         candidateId: null,
         status: 'CREATED'
       };
 
-      // 4. Guardar en Redis usando el userId como llave única
-      // Esto previene que un mismo usuario inicie múltiples sesiones simultáneas
+      // 4. GUARDAR EN REDIS
+      // Usamos EXPIREAT con el timestamp absoluto directamente
       await this.redis.set(
         `session:${data.userId}`,
         JSON.stringify(sessionRecord),
-        'EX',
-        ttlSeconds
+        'EXAT',
+        data.expirationTime
       );
 
-      this.logger.log(`Sesión de caché creada para usuario ${data.userId} (TTL: ${ttlSeconds}s)`);
+      const ttlVisual = data.expirationTime - nowUnix;
+      this.logger.log(`Sesión creada para usuario ${data.userId}. Expira en ${ttlVisual}s (Timestamp: ${data.expirationTime})`);
 
       return {
         success: true,
@@ -150,7 +176,7 @@ export class AppService {
 
     } catch (error) {
       this.logger.error(`Fallo al inicializar sesión: ${error.message}`);
-      throw new InternalServerErrorException('No se pudo establecer la sesión de votación');
+      throw new InternalServerErrorException('No se pudo establecer la sesión');
     }
   }
 }

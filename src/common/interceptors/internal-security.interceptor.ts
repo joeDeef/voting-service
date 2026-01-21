@@ -18,18 +18,39 @@ export class InternalSecurityInterceptor implements NestInterceptor {
   constructor(private readonly configService: ConfigService) { }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const rpcCall = context.switchToRpc();
-    const dataContainer = rpcCall.getData();
+    const httpContext = context.switchToHttp();
+    const request = httpContext.getRequest();
+    const method = request.method;
 
-    this.logger.log('--- [INTERCEPTOR] Iniciando desempaquetado de datos ---');
+    this.logger.log(`--- [INTERCEPTOR] Iniciando desempaquetado de datos para ${method} ---`);
 
-    if (!dataContainer || !dataContainer.headers) {
-      this.logger.error('Petición malformada: Estructura de mensaje inválida');
-      throw new BadRequestException('Petición malformada: Faltan datos o headers');
+    let headers: any;
+    let payload: any;
+
+    if (method === 'GET') {
+      // Para GET: headers de seguridad están en HTTP headers
+      headers = request.headers;
+      payload = {}; // GET no tiene payload
+      this.logger.log('Procesando petición GET - headers de seguridad en HTTP headers');
+    } else {
+      // Para POST: headers y payload están en el body
+      const dataContainer = request.body;
+      if (!dataContainer || !dataContainer.headers) {
+        this.logger.error('Petición POST malformada: Estructura de mensaje inválida');
+        throw new BadRequestException('Petición POST malformada: Faltan datos o headers');
+      }
+      headers = dataContainer.headers;
+      payload = dataContainer.data;
+      this.logger.log('Procesando petición POST - headers de seguridad en body');
     }
 
-    const headers = dataContainer.headers;
-    let payload = dataContainer.data;
+    this.logger.log(`Headers recibidos: ${JSON.stringify(Object.keys(headers))}`);
+    this.logger.log(`Payload tipo: ${typeof payload}, es null: ${payload === null}, es undefined: ${payload === undefined}`);
+    
+    if (payload) {
+      this.logger.log(`Payload keys: ${JSON.stringify(Object.keys(payload))}`);
+      this.logger.log(`Payload completo: ${JSON.stringify(payload)}`);
+    }
 
     const gatewayPublicKeyBase64 = this.configService.get<string>('APIGATEWAY_PUBLIC_KEY_BASE64');
     const authPrivateKeyBase64 = this.configService.get<string>('VOTING_DECRYPT_PRIVATE_KEY_BASE64');
@@ -45,16 +66,22 @@ export class InternalSecurityInterceptor implements NestInterceptor {
       const safePayload = payload || {};
 
       // --- DESCIFRADO ---
+      this.logger.log(`x-encrypted header: '${headers['x-encrypted']}'`);
       if (headers['x-encrypted'] === 'true') {
         this.logger.log('Detectado contenido cifrado. Iniciando descifrado RSA...');
+        this.logger.log(`safePayload para cifrado: ${JSON.stringify(safePayload)}`);
+        
         const privateKey = Buffer.from(authPrivateKeyBase64, 'base64').toString('utf-8');
 
         // Validar que exista data para descifrar
-        if (!safePayload.data) throw new Error('No hay datos cifrados en el payload');
+        if (!safePayload || !safePayload.data) {
+          this.logger.error(`Error: safePayload=${JSON.stringify(safePayload)}, safePayload.data=${safePayload?.data}`);
+          throw new Error('No hay datos cifrados en el payload');
+        }
 
         const encryptedBuffer = Buffer.from(safePayload.data, 'base64');
 
-        const decrypted = crypto.publicDecrypt(
+        const decrypted = crypto.privateDecrypt(
           {
             key: privateKey,
             padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
@@ -64,11 +91,18 @@ export class InternalSecurityInterceptor implements NestInterceptor {
         );
 
         payloadString = decrypted.toString('utf-8');
-        dataContainer.data = JSON.parse(payloadString);
+        const decryptedData = JSON.parse(payloadString);
+        // Colocar los datos descifrados en request.body para que el controlador los reciba
+        if (method === 'POST') {
+          request.body = decryptedData;
+        }
       } else {
-        // IMPORTANTE: JSON.stringify(undefined) devuelve undefined, 
-        // pero JSON.stringify({}) devuelve "{}"
+
         payloadString = JSON.stringify(safePayload);
+
+        if (method === 'POST' && safePayload && Object.keys(safePayload).length > 0) {
+          request.body = safePayload;
+        }
       }
 
       // --- VERIFICACIÓN DE FIRMA ---
@@ -77,10 +111,9 @@ export class InternalSecurityInterceptor implements NestInterceptor {
         throw new Error('El header x-signature está ausente');
       }
 
-      this.logger.log('Verificando firma digital de integridad (PSS)...');
+      this.logger.log('Verificando firma digital de integridad');
       const publicKey = Buffer.from(gatewayPublicKeyBase64, 'base64').toString('utf-8');
       const signature = Buffer.from(signatureRaw, 'base64');
-
       const isVerified = crypto.verify(
         "sha256",
         Buffer.from(payloadString), // Aquí ya no será undefined
@@ -91,6 +124,7 @@ export class InternalSecurityInterceptor implements NestInterceptor {
         },
         signature
       );
+
 
       if (!isVerified) {
         this.logger.error('Fallo: La firma digital NO coincide con el contenido');

@@ -31,13 +31,13 @@ export class AppController {
 
   // Peticion desde el API Gateway para confirmar un voto
   @Post('confirm')
-  async confirmVote(@Body() data: { userId: string, electionId: string }) {
+  async confirmVote(@Body() data: { userId: string; candidateId: string, electionId: string }) {
     return await this.appService.finalizeVote(data);
   }
 
   // Peticion desde el Wallet Service que avisa que ya se subio a la blockchain
   @Post('upBlockhain')
-  confirmUpBlockchain(@Body() data: any): string {
-    return this.appService.confirmUpBlockchain();
+  confirmUpBlockchain(@Body() data: {voterToken: string}) {
+    return this.appService.confirmUpBlockchain(data);
   }
 }

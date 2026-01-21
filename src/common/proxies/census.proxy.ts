@@ -7,9 +7,8 @@ import { ClientProxy } from "@nestjs/microservices";
 export class CensusProxy extends BaseMessageProxy {
   protected readonly logger = new Logger(CensusProxy.name);
   protected readonly serviceName = 'census-service';
-  // Variables obligatorias por la base, pero que no se usarán aquí
-  protected readonly privateKeyVar = ''; 
-  protected readonly apiKeyVar = '';    
+  protected readonly privateKeyVar = '';
+  protected readonly apiKeyVar = '';
 
   constructor(
     @Inject('CENSUS_SERVICE') private readonly censusClient: ClientProxy,
@@ -19,6 +18,10 @@ export class CensusProxy extends BaseMessageProxy {
   }
 
   async saveVote(cedula: string) {
-    return this.sendPlainRequest('census.census.save-vote', { cedula });
+    return this.sendPlainRequest('census.save-vote', { cedula });
+  }
+
+  async confirmVoto(cedula: string) {
+    return this.sendPlainRequest('census.confirm-vote', { cedula });
   }
 }
