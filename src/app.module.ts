@@ -17,12 +17,19 @@ import { EnvelopeOpenerInterceptor } from './common/interceptors/envelopeOpener.
 import { KeyVaultService } from './common/security/keyVault.service';
 import { EnvelopePackerService } from './common/security/envelopePacker.service';
 @Module({
-  imports:[
-    BullModule.forRoot({
-      connection: {
-        host: 'localhost',
-        port: 6379,
+  imports: [
+    BullModule.forRootAsync({
+      useFactory: (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('REDIS_URL');
+
+        // Si tienes una URL completa (como la de Railway), BullMQ puede usarla directamente
+        return {
+          connection: {
+            url: redisUrl || 'redis://localhost:6379',
+          },
+        };
       },
+      inject: [ConfigService],
     }),
     BullModule.registerQueue({
       name: 'voting-queue',
@@ -45,7 +52,7 @@ import { EnvelopePackerService } from './common/security/envelopePacker.service'
         transport: Transport.TCP,
         options: {
           // Usamos variables de entorno para mayor flexibilidad
-          host: process.env.CENSUS_SERVICE_HOST || '127.0.0.1', 
+          host: process.env.CENSUS_SERVICE_HOST || '127.0.0.1',
           port: Number(process.env.CENSUS_SERVICE_PORT) || 3001,
         },
       },
