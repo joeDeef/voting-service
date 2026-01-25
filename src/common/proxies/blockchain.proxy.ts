@@ -1,19 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { InternalSecurityService } from 'src/common/security/internal-security.service';
-import { BaseProxy } from './base.proxy';
+import { EnvelopePackerService } from '../security/envelopePacker.service';
+import { BaseProxy } from './http-base.proxy';
 
 @Injectable()
 export class BlockchainProxy extends BaseProxy {
   protected readonly logger = new Logger(BlockchainProxy.name);
-  protected readonly serviceName = 'blockchain-service';
-  protected readonly privateKeyVar = 'VOTING_PRIVATE_KEY_BASE64';
+  protected readonly targetService = 'blockchain-service';
+  protected readonly originService = 'voting-service';
+  protected readonly privateKeyVar = 'VOTING_BLOCKCHAIN_PRIVATE_KEY_BASE64';
   protected readonly urlVar = 'BLOCKCHAIN_SERVICE_URL';
   protected readonly apiKeyVar = 'BLOCKCHAIN_INTERNAL_API_KEY';
+  protected readonly publicKeyVar = 'BLOCKCHAIN_PUBLIC_KEY_BASE64';
 
   constructor(
-    protected readonly securityService: InternalSecurityService,
+    protected readonly securityService: EnvelopePackerService,
     protected readonly httpService: HttpService,
     protected readonly configService: ConfigService,
   ) {
@@ -26,12 +28,12 @@ export class BlockchainProxy extends BaseProxy {
   async registerVoteOnBlockchain(votePayload: { idEleccion: string; idCandidato: string; fechaHora: number; tokenVotante: string }) {
     try {
       // Primero obtenemos el total de votos para logging
-      const totalVotes = await this.sendGet('/voting/total');
-      this.logger.log(`Total votes in blockchain service: ${JSON.stringify(totalVotes)}`);
+     // const totalVotes = await this.sendGet('/voting/total');
+      //this.logger.log(`Total votes in blockchain service: ${JSON.stringify(totalVotes)}`);
       
       // Enviamos el voto para ser registrado en blockchain
       const result = await this.sendPost('/voting/vote', votePayload);
-      this.logger.log('Vote successfully registered on blockchain');
+      this.logger.log('Vote send top up on blockchain');
       return result;
     } catch (error) {
       this.logger.error('Failed to register vote on blockchain:', error.message);

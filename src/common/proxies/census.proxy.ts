@@ -1,31 +1,32 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { BaseMessageProxy } from "./base-message.proxy";
-import { InternalSecurityService } from "../security/internal-security.service";
 import { ClientProxy } from "@nestjs/microservices";
+import { BaseMessageProxy } from "./tcp-base.proxy";
+import { EnvelopePackerService } from "../security/envelopePacker.service";
 
 @Injectable()
 export class CensusProxy extends BaseMessageProxy {
   protected readonly logger = new Logger(CensusProxy.name);
-  protected readonly serviceName = 'census-service';
-  protected readonly privateKeyVar = '';
-  protected readonly apiKeyVar = '';
+  protected readonly targetService = 'census-service';
+  protected readonly privateKeyVar = 'VOTING_SING_PRIVATE_KEY_BASE64'; // Clave para firmar mensajes
+  protected readonly apiKeyVar = 'CENSUS_INTERNAL_API_KEY';        // Clave para validación rápida
+  protected readonly publicKeyVar = 'CENSUS_ENCRYPT_PUBLIC_KEY';   // Clave pública del microservicio
 
   constructor(
     @Inject('CENSUS_SERVICE') private readonly censusClient: ClientProxy,
-    securityService: InternalSecurityService,
+    securityService: EnvelopePackerService,
   ) {
-    super(censusClient, securityService);
+    super(censusClient, securityService, 'voting-service');
   }
 
-  async iniciarVoto(cedula: string) {
-    return this.sendPlainRequest('census.start-voting', { cedula });
+  async iniciarVoto(id: string) {
+    return this.sendRequest('census.start-voting',{id});
   }
 
-  async saveVote(cedula: string) {
-    return this.sendPlainRequest('census.save-vote', { cedula });
+  async saveVote(id: string) {
+    return this.sendRequest('census.save-vote', { id });
   }
 
-  async confirmVoto(cedula: string) {
-    return this.sendPlainRequest('census.confirm-vote', { cedula });
+  async confirmVoto(id: string) {
+    return this.sendRequest('census.confirm-vote', { id });
   }
 }

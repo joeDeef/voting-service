@@ -1,7 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { APP_GUARD } from '@nestjs/core';
 import { HttpModule } from '@nestjs/axios';
 import { LoggerMiddleware } from './common/middlewares/logger.middleware';
 import { AppController } from './app.controller';
@@ -9,12 +8,25 @@ import { AppService } from './services/app.service';
 import { RedisModule } from '@nestjs-modules/ioredis';
 import { TokenPoolService } from './services/token-pool.service';
 import { BlockchainProxy } from './common/proxies/blockchain.proxy';
-import { InternalSecurityService } from './common/security/internal-security.service';
-import { InternalSecurityGuard } from './common/guards/internal-security.guard';
+import { InternalApiKeyGuard } from './common/guards/internalApiKey.guard';
 import { CensusProxy } from './common/proxies/census.proxy';
 import { ClientsModule, Transport } from '@nestjs/microservices';
+import { BullModule } from '@nestjs/bullmq';
+import { VoteProcessor } from './services/vote.processor';
+import { EnvelopeOpenerInterceptor } from './common/interceptors/envelopeOpener.interceptor';
+import { KeyVaultService } from './common/security/keyVault.service';
+import { EnvelopePackerService } from './common/security/envelopePacker.service';
 @Module({
-  imports: [
+  imports:[
+    BullModule.forRoot({
+      connection: {
+        host: 'localhost',
+        port: 6379,
+      },
+    }),
+    BullModule.registerQueue({
+      name: 'voting-queue',
+    }),
     ConfigModule.forRoot({
       isGlobal: true,
     }),
@@ -41,14 +53,14 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
   ],
   providers: [
     AppService,
-    {
-      provide: APP_GUARD,
-      useClass: InternalSecurityGuard,
-    },
     TokenPoolService,
     BlockchainProxy,
-    InternalSecurityService,
-    CensusProxy
+    CensusProxy,
+    VoteProcessor,
+    EnvelopeOpenerInterceptor,
+    EnvelopePackerService,
+    InternalApiKeyGuard,
+    KeyVaultService,
   ],
   controllers: [AppController],
 })
