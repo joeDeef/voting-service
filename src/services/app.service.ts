@@ -103,7 +103,7 @@ export class AppService {
       await this.censusProxy.saveVote(data.userId);
       this.logger.log(`Estado actualizado a GUARDANDO_VOTO para usuario: ${data.userId}`);
 
-      const fechaEcuador = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Guayaquil" }));
+      const fechaEcuador = new Date();
 
       // Encolar voto para registro en blockchain
       await this.voteQueue.add('register-blockchain-vote', {
@@ -112,7 +112,7 @@ export class AppService {
           tokenVotante: session.voterToken,
           idEleccion: data.electionId,
           idCandidato: session.candidateId,
-          fechaHora: fechaEcuador.toISOString(), // Esto guardará el tiempo real de Ecuador
+          fechaHora: fechaEcuador.getTime(), // Esto guardará el tiempo real de Ecuador
         }
       }, {
         jobId: `vote-${data.userId}-${data.electionId}`,
