@@ -3,7 +3,6 @@ import Redis from 'ioredis';
 import { SetTimeDto } from 'src/dto/setTime.dto';
 import { TokenPoolService } from './token-pool.service';
 import { InjectRedis } from '@nestjs-modules/ioredis';
-import { BlockchainProxy } from 'src/common/proxies/blockchain.proxy';
 import { CensusProxy } from 'src/common/proxies/census.proxy';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
